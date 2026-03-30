@@ -1,0 +1,9 @@
+/* All @import rules must be at the top of the file */
+@import 'tailwindcss';
+@import './theme.css';
+@import './fonts.css';
+
+/* @source directives tell Tailwind what files to scan for classes */
+@source "../../index.html";
+@source "../**/*.{js,ts,jsx,tsx}";
+@source "../app/components/ui/**/*.{js,ts,jsx,tsx}"; /* <-- Thêm dòng này cho các UI component */
