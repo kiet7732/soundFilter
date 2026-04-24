@@ -1,4 +1,4 @@
-# OmniSplit AI - AI-Powered Audio Separation
+# soundFilter AI - AI-Powered Audio Separation
 
 System built with React and FastAPI, using state-of-the-art AI models (Demucs, AudioSep) to separate audio sources from a single track.
 
