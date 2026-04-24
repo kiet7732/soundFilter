@@ -1,11 +1,11 @@
 import json
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Form
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
 import uuid
+import subprocess 
 
-# 1. ĐÃ SỬA TÊN HÀM IMPORT CHO ĐÚNG VỚI FILE
 from modules.demucs_task import run_demucs_task
 from modules.audiosep_task import run_audiosep_task
 from fastapi.staticfiles import StaticFiles
@@ -32,8 +32,37 @@ app.mount("/api/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 # Khai báo đường dẫn hệ thống tệp
 UPLOAD_DIR = "data/uploads"
 RESULT_DIR = "data/results"
+MAX_FILE_SIZE = 60 * 1024 * 1024 # 60MB
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
+
+#check MB
+def validate_file_size(file: UploadFile):
+    """Kiểm tra kích thước file tải lên không được vượt quá giới hạn (60MB)."""
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0) # Trả con trỏ về đầu file
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File audio không được vượt quá 60MB. Vui lòng chọn file nhỏ hơn.")
+
+#Hàm ép mọi định dạng về chuẩn WAV 44.1kHz
+def sanitize_to_wav(input_path: str, task_id: str) -> str:
+    # Nếu file tải lên đã là wav, không cần làm gì cả
+    if input_path.lower().endswith(".wav"):
+        return input_path
+        
+    print(f"[{task_id}] Định dạng lạ. Đang ép chuẩn về WAV...")
+    output_path = os.path.join(UPLOAD_DIR, f"{task_id}_sanitized.wav")
+    
+    # Lệnh FFmpeg: chuyển đổi mọi thứ thành .wav chuẩn (PCM 16-bit, 44100Hz)
+    subprocess.run([
+        "ffmpeg", "-y", "-i", input_path,
+        "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", 
+        output_path
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Trả về đường dẫn của file WAV sạch sẽ vừa tạo
+    return output_path
 
 # 2. API: Chế độ Âm nhạc (Tách Demucs)
 @app.post("/api/separate-music")
@@ -42,6 +71,8 @@ async def separate_music(
     file: UploadFile = File(...),
     karaoke_mode: str = Form("true") 
 ):
+    validate_file_size(file)
+
     task_id = str(uuid.uuid4())
     file_extension = file.filename.split(".")[-1]
     save_path = os.path.join(UPLOAD_DIR, f"{task_id}.{file_extension}")
@@ -49,7 +80,9 @@ async def separate_music(
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    background_tasks.add_task(run_demucs_task, task_id, save_path, RESULT_DIR)
+    clean_wav_path = sanitize_to_wav(save_path, task_id)    
+    
+    background_tasks.add_task(run_demucs_task, task_id, clean_wav_path, RESULT_DIR)
     
     return {
         "status": "processing",
@@ -61,14 +94,17 @@ async def separate_music(
 @app.post("/api/separate-env")
 # Dùng Form(None) cho prompt để Frontend có gửi hay không cũng không bị lỗi
 async def separate_environment(background_tasks: BackgroundTasks, file: UploadFile = File(...), prompt: str = Form(None)):
+    validate_file_size(file)
+
     task_id = str(uuid.uuid4())
     save_path = os.path.join(UPLOAD_DIR, f"{task_id}_{file.filename}")
     
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # ĐÃ SỬA: Gọi đúng tên hàm run_audiosep_task và KHÔNG truyền prompt vào nữa (vì CLAP tự lo)
-    background_tasks.add_task(run_audiosep_task, task_id, save_path, RESULT_DIR)
+    clean_wav_path = sanitize_to_wav(save_path, task_id)
+    
+    background_tasks.add_task(run_audiosep_task, task_id, clean_wav_path, RESULT_DIR)
     
     return {
         "status": "processing",

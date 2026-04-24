@@ -36,6 +36,7 @@ node_modules/
 .venv/
 dist/
 
+data/
 
 start.bat
 AudioAPI/pin.txt
