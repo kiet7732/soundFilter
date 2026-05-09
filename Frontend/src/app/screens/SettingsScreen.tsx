@@ -1,5 +1,5 @@
 import { Settings, Zap, Download, Bell, Shield } from "lucide-react";
-import { Switch } from "../components/ui/switch"; 
+import { Switch } from "../components/ui/switch";
 
 export function SettingsScreen() {
   return (
@@ -21,7 +21,7 @@ export function SettingsScreen() {
               <Zap className="w-5 h-5 text-purple-400" />
               Processing Settings
             </h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
                 <div>
@@ -58,7 +58,7 @@ export function SettingsScreen() {
               <Download className="w-5 h-5 text-cyan-400" />
               Export Settings
             </h3>
-            
+
             <div className="space-y-4">
               <div className="p-4 bg-white/5 rounded-xl">
                 <label className="block font-medium text-white mb-2">Default Export Format</label>
@@ -91,7 +91,7 @@ export function SettingsScreen() {
               <Bell className="w-5 h-5 text-green-400" />
               Notifications
             </h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
                 <div>
@@ -120,7 +120,7 @@ export function SettingsScreen() {
               <Shield className="w-5 h-5 text-orange-400" />
               Account & Privacy
             </h3>
-            
+
             <div className="space-y-3">
               <button className="w-full p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all text-left">
                 <p className="font-medium text-white">Manage Subscription</p>

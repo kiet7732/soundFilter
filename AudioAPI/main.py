@@ -1,126 +1,32 @@
-import json
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Form, HTTPException
+"""
+OmniSplit AI Backend - Main Application
+Entry point cho FastAPI application với kiến trúc modular
+"""
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import shutil
-import os
-import uuid
-import subprocess 
-
-from modules.demucs_task import run_demucs_task
-from modules.audiosep_task import run_audiosep_task
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="OmniSplit AI Backend")
+from config.settings import API_TITLE, API_VERSION, CORS_ORIGINS, UPLOAD_DIR, RESULT_DIR
+from routes import separation, status, karaoke
 
-# CẤU HÌNH CORS
+# Application Setup
+app = FastAPI(title=API_TITLE, version=API_VERSION)
+
+# CORS Middleware 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173", 
-        "http://localhost:3000"
-    ], 
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# để "Mở cửa" thư mục kết quả cho frontend truy cập trực tiếp
-app.mount("/api/files", StaticFiles(directory="data/results"), name="files") #đã tách
-app.mount("/api/uploads", StaticFiles(directory="data/uploads"), name="uploads") #âm gốc
+# Static Files
+# Mở cửa thư mục kết quả cho frontend truy cập trực tiếp
+app.mount("/api/files", StaticFiles(directory=RESULT_DIR), name="files")
+app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# Khai báo đường dẫn hệ thống tệp
-UPLOAD_DIR = "data/uploads"
-RESULT_DIR = "data/results"
-MAX_FILE_SIZE = 60 * 1024 * 1024 # 60MB
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-#check MB
-def validate_file_size(file: UploadFile):
-    """Kiểm tra kích thước file tải lên không được vượt quá giới hạn (60MB)."""
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0) # Trả con trỏ về đầu file
-    if file_size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File audio không được vượt quá 60MB. Vui lòng chọn file nhỏ hơn.")
-
-#Hàm ép mọi định dạng về chuẩn WAV 44.1kHz
-def sanitize_to_wav(input_path: str, task_id: str) -> str:
-    # Nếu file tải lên đã là wav, không cần làm gì cả
-    if input_path.lower().endswith(".wav"):
-        return input_path
-        
-    print(f"[{task_id}] Định dạng lạ. Đang ép chuẩn về WAV...")
-    output_path = os.path.join(UPLOAD_DIR, f"{task_id}_sanitized.wav")
-    
-    # Lệnh FFmpeg: chuyển đổi mọi thứ thành .wav chuẩn (PCM 16-bit, 44100Hz)
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", 
-        output_path
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
-    # Trả về đường dẫn của file WAV sạch sẽ vừa tạo
-    return output_path
-
-# 2. API: Chế độ Âm nhạc (Tách Demucs)
-@app.post("/api/separate-music")
-async def separate_music(
-    background_tasks: BackgroundTasks, 
-    file: UploadFile = File(...),
-    karaoke_mode: str = Form("true") 
-):
-    validate_file_size(file)
-
-    task_id = str(uuid.uuid4())
-    file_extension = file.filename.split(".")[-1]
-    save_path = os.path.join(UPLOAD_DIR, f"{task_id}.{file_extension}")
-    
-    with open(save_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    clean_wav_path = sanitize_to_wav(save_path, task_id)    
-    
-    background_tasks.add_task(run_demucs_task, task_id, clean_wav_path, RESULT_DIR)
-    
-    return {
-        "status": "processing",
-        "task_id": task_id,
-        "message": "Đã nhận file. Đang đưa vào tiến trình Demucs."
-    }
-
-# 3. API: Chế độ Môi trường (Tách AudioSep)
-@app.post("/api/separate-env")
-# Dùng Form(None) cho prompt để Frontend có gửi hay không cũng không bị lỗi
-async def separate_environment(background_tasks: BackgroundTasks, file: UploadFile = File(...), prompt: str = Form(None)):
-    validate_file_size(file)
-
-    task_id = str(uuid.uuid4())
-    save_path = os.path.join(UPLOAD_DIR, f"{task_id}_{file.filename}")
-    
-    with open(save_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    clean_wav_path = sanitize_to_wav(save_path, task_id)
-    
-    background_tasks.add_task(run_audiosep_task, task_id, clean_wav_path, RESULT_DIR)
-    
-    return {
-        "status": "processing",
-        "task_id": task_id,
-        "message": "Đã nhận file. Đang dùng CLAP quét tự động..."
-    }
-
-# API kiểm tra trạng thái (Để React hỏi thăm liên tục)
-@app.get("/api/status/{task_id}")
-async def check_status(task_id: str):
-    status_file = os.path.join(RESULT_DIR, task_id, "status.json")
-    
-    # Nếu file status.json tồn tại, tức là AI đã chạy xong (hoặc bị lỗi)
-    if os.path.exists(status_file):
-        with open(status_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data 
-    
-    return {"status": "processing"}
+# Routes
+app.include_router(separation.router, tags=["Separation"])
+app.include_router(status.router, tags=["Status"])
+app.include_router(karaoke.router, tags=["Karaoke"])

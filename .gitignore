@@ -38,5 +38,6 @@ dist/
 
 data/
 
+__init__.py
 start.bat
 AudioAPI/pin.txt

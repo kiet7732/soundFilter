@@ -86,6 +86,13 @@ export function ProcessingScreen() {
               state: { fileName, taskId, isKaraokeMode } 
             });
           }, 1500);
+        } else if (res.data.status === "error") {
+          // Nếu Backend báo lỗi, dừng ngay và thông báo
+          clearInterval(pollInterval);
+          clearInterval(visualInterval);
+          setSteps((prev) => prev.map((step) => ({ ...step, progress: 0, color: "#EF4444" })));
+          alert("Lỗi từ hệ thống AI: " + (res.data.message || "Lỗi không xác định"));
+          navigate(-1); // Quay lại trang trước
         }
       } catch (error) {
         console.error("Lỗi khi kiểm tra trạng thái AI:", error);
