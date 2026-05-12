@@ -62,7 +62,7 @@ export function useVideoRenderer(taskId: string) {
         if (isReady) {
           if (checkVideoRef.current) clearInterval(checkVideoRef.current);
           setVideoStatus("ready");
-          setVideoUrl(getResultUrl(taskId, "Final_Karaoke.mp4"));
+          setVideoUrl(`${getResultUrl(taskId, "Final_Karaoke.mp4")}?t=${Date.now()}`);
           console.log("✅ Video đã render xong!");
         }
       }, 3000);

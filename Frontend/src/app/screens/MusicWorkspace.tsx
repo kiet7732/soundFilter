@@ -239,6 +239,7 @@ export function MusicWorkspace() {
                 issues={lyrics.issues}
                 isExpanded={lyrics.isLyricsExpanded}
                 editingLyric={lyrics.editingLyric}
+                isRendering={videoRenderer.videoStatus === "rendering"}
                 onToggleExpand={() => lyrics.setIsLyricsExpanded(!lyrics.isLyricsExpanded)}
                 onStartEdit={lyrics.setEditingLyric}
                 onUpdateLyric={lyrics.handleUpdateLyric}
@@ -256,6 +257,7 @@ export function MusicWorkspace() {
                   videoRenderer.setBgImage(null);
                   videoRenderer.setVideoStatus("idle");
                 }}
+                onDownloadVideo={handleDownload}
               />
             </>
           )}

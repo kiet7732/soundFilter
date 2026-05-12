@@ -1,7 +1,4 @@
-/**
- * EnvironmentWorkspace - Refactored Version (Giữ nguyên giao diện cũ)
- * Chỉ refactor code để dễ quản lý, không thay đổi UI
- */
+// EnvironmentWorkspace - Refactored Version 
 import { Navigate, useLocation } from "react-router";
 import { Download, Volume2, Play, Pause, Zap, Loader2 } from "lucide-react";
 import { Switch } from "../components/ui/switch";
@@ -11,6 +8,7 @@ import { getResultUrl } from "../services/api";
 import { downloadAllAsZip, handleDownload } from "../utils/downloadHelpers";
 import type { EnvironmentTrack } from "../types/environment.types";
 import { MessageCircle, Car, CloudRain, Wind, Music, Bird, Activity } from "lucide-react";
+import { WaveSurferPlayer } from "../components/WaveSurferPlayer";
 
 // Icon mapping
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -37,7 +35,10 @@ export function EnvironmentWorkspace() {
 
   // Audio states
   const [playingOriginal, setPlayingOriginal] = useState(false);
+  const [originalProgress, setOriginalProgress] = useState(0);
+
   const [playingTracks, setPlayingTracks] = useState<Record<string, boolean>>({});
+  const [trackProgress, setTrackProgress] = useState<Record<string, number>>({});
 
   const originalRef = useRef<HTMLAudioElement>(null);
   const trackRefs = useRef<Record<string, HTMLAudioElement | null>>({});
@@ -100,7 +101,15 @@ export function EnvironmentWorkspace() {
   return (
     <div className="min-h-screen p-8">
       {/* THẺ AUDIO ẨN */}
-      <audio ref={originalRef} src={getOriginalUrl()} onEnded={() => setPlayingOriginal(false)} />
+      <audio
+        ref={originalRef}
+        src={getOriginalUrl()}
+        onEnded={() => setPlayingOriginal(false)}
+        onTimeUpdate={(e) => {
+          const el = e.currentTarget;
+          if (el.duration) setOriginalProgress((el.currentTime / el.duration) * 100);
+        }}
+      />
 
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
@@ -133,10 +142,18 @@ export function EnvironmentWorkspace() {
               >
                 {playingOriginal ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white ml-0.5" />}
               </button>
-              <div className="flex-1 flex items-center gap-0.5 h-16">
-                {Array.from({ length: 120 }).map((_, i) => (
-                  <div key={i} className="flex-1 bg-gradient-to-t from-[#06B6D4] to-[#8B5CF6] rounded-full transition-all" style={{ height: `${Math.random() * 60 + 30}%`, opacity: 0.3 + Math.random() * 0.4 }}></div>
-                ))}
+              <div className="flex-1 flex items-center">
+                <WaveSurferPlayer
+                  audioUrl={getOriginalUrl()}
+                  waveColor="#06B6D4"
+                  progressColor="#8B5CF6"
+                  progress={originalProgress}
+                  height={64}
+                  onSeek={(percent) => {
+                    const el = originalRef.current;
+                    if (el && el.duration) el.currentTime = percent * el.duration;
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -195,6 +212,10 @@ export function EnvironmentWorkspace() {
                   ref={el => { trackRefs.current[track.id] = el; }}
                   src={getResultUrl(taskId, track.fileName)}
                   onEnded={() => setPlayingTracks(prev => ({ ...prev, [track.id]: false }))}
+                  onTimeUpdate={(e) => {
+                    const el = e.currentTarget;
+                    if (el.duration) setTrackProgress(prev => ({ ...prev, [track.id]: (el.currentTime / el.duration) * 100 }));
+                  }}
                 />
 
                 <div className="absolute inset-0 rounded-2xl blur-xl opacity-0 group-hover/track:opacity-100 transition-opacity" style={{ backgroundColor: `${track.color}15` }}></div>
@@ -214,10 +235,18 @@ export function EnvironmentWorkspace() {
                         >
                           {playingTracks[track.id] ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
                         </button>
-                        <div className="flex-1 flex items-center gap-0.5 h-12">
-                          {Array.from({ length: 80 }).map((_, i) => (
-                            <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: track.color, height: `${Math.random() * 50 + 30}%`, opacity: 0.3 + Math.random() * 0.4 }}></div>
-                          ))}
+                        <div className="flex-1 flex items-center">
+                          <WaveSurferPlayer
+                            audioUrl={getResultUrl(taskId, track.fileName)}
+                            waveColor={`${track.color}80`}
+                            progressColor={track.color}
+                            progress={trackProgress[track.id] || 0}
+                            height={48}
+                            onSeek={(percent) => {
+                              const el = trackRefs.current[track.id];
+                              if (el && el.duration) el.currentTime = percent * el.duration;
+                            }}
+                          />
                         </div>
                       </div>
                     </div>

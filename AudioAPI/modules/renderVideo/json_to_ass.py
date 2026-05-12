@@ -126,39 +126,70 @@ def json_to_ass(input_json, output_ass):
         data = json.load(f)
         
     original_segments = data.get('segments', [])
-    # Ép max_words=7 để vừa khít màn hình 1280px cho font size 65
     segments = split_long_segments(original_segments, max_words=7)
     
-    events = []
+    # ==============================================================
+    # VÒNG QUÉT 1: TÍNH TOÁN TRƯỚC VỊ TRÍ VÀ THỜI GIAN AN TOÀN
+    # ==============================================================
+    line_assignments = []
+    new_starts = []
+    
     prev_start = 0.0
     prev_end = 0.0
-    
     current_line = 1 
     force_next_start = None  
 
     for i, seg in enumerate(segments):
         start = seg['start']
         end = seg['end']
-        
-        countdown = False
         gap = start - prev_end
         
         if i == 0 or gap >= 6.0:
-            countdown = True
-            new_start = max(0, start - 6.0) 
+            base_new_start = max(0, start - 6.0) 
             current_line = 0  
-            force_next_start = new_start  
+            force_next_start = base_new_start  
         else:
             current_line = 1 - current_line  
-            
             if force_next_start is not None:
-                new_start = force_next_start 
+                base_new_start = force_next_start 
                 force_next_start = None      
             else:
                 half_prev = prev_start + (prev_end - prev_start) * 0.4
-                new_start = min(half_prev, start - 1.5)
-                new_start = max(0, new_start)
-            
+                base_new_start = min(half_prev, start - 1.5)
+                base_new_start = max(0, base_new_start)
+        
+        safe_new_start = base_new_start
+        for j in range(i - 1, -1, -1):
+            if line_assignments[j] == current_line:
+                prev_same_line_end = segments[j]['end']
+                min_allowed_start = prev_same_line_end + 0.2
+                if safe_new_start < min_allowed_start:
+                    safe_new_start = min_allowed_start
+                break
+        
+        new_starts.append(safe_new_start)
+        line_assignments.append(current_line)
+        
+        prev_start = start
+        prev_end = end
+
+    # ==============================================================
+    # VÒNG QUÉT 2: XUẤT FILE PHỤ ĐỀ
+    # ==============================================================
+    events = []
+    for i, seg in enumerate(segments):
+        start = seg['start']
+        end = seg['end']
+        new_start = new_starts[i]
+        current_line = line_assignments[i]
+        
+        countdown = False
+        if i == 0:
+            countdown = True
+        else:
+            if (start - segments[i-1]['end']) >= 6.0:
+                countdown = True
+        
         if current_line == 0:
             style = "KaraTop"
             pos_tag = "\\pos(40,590)"
@@ -168,37 +199,55 @@ def json_to_ass(input_json, output_ass):
             
         kara_text = build_karaoke_line(seg['words'])
         
-        # LOGIC 1 DẤU CHẤM
-        dots = '{\\k100}. \\k100}.\\k100}.' if countdown else ''
-        
         wait_time = int(round((start - new_start) * 100))
+        
         if countdown:
-            silence = wait_time - 100 # Trừ 1 giây cho 1 dấu chấm
-            if silence > 0:
-                text_line = f"{{\\k{silence}}}{dots}{kara_text}"
+            # Nếu thời gian chờ dài hơn 3 giây (300 centiseconds), mỗi chấm nháy đúng 1 giây
+            if wait_time >= 300:
+                silence = wait_time - 300
+                dots = r"{\k100}. {\k100}. {\k100}."
             else:
-                text_line = dots + kara_text
+                # Nếu thời gian chờ quá ngắn, chia đều thời gian nháy cho 3 chấm để kịp nhịp
+                dot_time = wait_time // 3
+                silence = wait_time - (dot_time * 3)
+                dots = f"{{\\k{dot_time}}}.{{\\k{dot_time}}}.{{\\k{dot_time}}}."
+                
+            if silence > 0:
+                text_line = f"{{\\k{silence}}}{dots} {kara_text}"
+            else:
+                text_line = f"{dots} {kara_text}"
         else:
             if wait_time > 0:
-                text_line = f"{{\\k{wait_time}}}" + kara_text
+                text_line = f"{{\\k{wait_time}}}{kara_text}"
             else:
                 text_line = kara_text
+        # ==============================================================
             
-        # Thêm thẻ \pos vào ngay đầu mỗi câu hát
-        text_line = f"{{{pos_tag}\\fad(0,500)}}" + text_line
+        next_same_line_start = None
+        for j in range(i + 1, len(segments)):
+            if line_assignments[j] == current_line:
+                next_same_line_start = new_starts[j]
+                break
+        
         event_end = end + 0.5 
-            
-        events.append(f"Dialogue: 0,{ass_time(new_start)},{ass_time(event_end)},{style},,0,0,0,,{text_line}")
+        
+        if next_same_line_start is not None:
+            safe_end = next_same_line_start - 0.1
+            if event_end > safe_end:
+                event_end = safe_end
+        
+        if event_end < end:
+            event_end = end + 0.1
 
-        prev_start = start
-        prev_end = end
+        text_line = f"{{{pos_tag}\\fad(0,500)}}" + text_line
+        events.append(f"Dialogue: 0,{ass_time(new_start)},{ass_time(event_end)},{style},,0,0,0,,{text_line}")
 
     with open(output_ass, 'w', encoding='utf-8-sig') as f:
         f.write(ass_header() + '\n')
         for ev in events:
             f.write(ev + '\n')
             
-    print(f"[THÀNH CÔNG] Đã xuất file Subtitle hoàn hảo: {output_ass}")
+    print(f"[THÀNH CÔNG] Đã xuất file Subtitle có 3 chấm bắt nhịp hoàn hảo: {output_ass}")
 
 if __name__ == "__main__":
     # Test block
