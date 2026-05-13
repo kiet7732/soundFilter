@@ -6,6 +6,7 @@ import os
 import json
 import urllib.request
 import gc 
+import subprocess # Thêm thư viện để gọi FFmpeg nén MP3
 from pipeline import build_audiosep, separate_audio
 from transformers import ClapModel, ClapProcessor
 
@@ -74,13 +75,12 @@ class SmartAnalyzer:
         candidates = []
         for label, score in sorted_items:
             if label not in blacklist and score > 0.10:
-                candidates.append((label, float(score))) # Convert numpy float to python float cho JSON
+                candidates.append((label, float(score))) 
                 if len(candidates) >= 5: break
         return candidates
 
 
 def is_related(target, noise):
-    
     t = target.lower()
     n = noise.lower()
     if t in n or n in t: return True
@@ -94,7 +94,6 @@ def is_related(target, noise):
 
 
 class AdaptiveSignalProcessor:
-    
     def __init__(self):
         pass
     def get_strategy(self, label):
@@ -141,6 +140,27 @@ class AdaptiveSignalProcessor:
         y_clean = librosa.istft(mag_clean * phase_mix, hop_length=hop)
         return y_clean, sr
 
+# =========================================================
+# HÀM HELPER: CHUYỂN ĐỔI SANG MP3 BẰNG FFMPEG 
+# =========================================================
+def export_mp3(audio_data, sr, output_folder, base_name):
+    wav_path = os.path.join(output_folder, f"{base_name}.wav")
+    mp3_path = os.path.join(output_folder, f"{base_name}.mp3")
+    
+    # 1. Lưu file WAV tạm thời
+    sf.write(wav_path, audio_data, sr)
+    
+    # 2. Gọi FFmpeg nén sang MP3 ẩn dưới nền
+    subprocess.run(['ffmpeg', '-y', '-i', wav_path, '-b:a', '192k', mp3_path], 
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # 3. Dọn dẹp file WAV tạm
+    if os.path.exists(wav_path):
+        os.remove(wav_path)
+        
+    return f"{base_name}.mp3"
+
+
 def process_option(model, audio_file, target_label, all_detected_labels, output_folder, device):
     
     noise_list = []
@@ -153,10 +173,13 @@ def process_option(model, audio_file, target_label, all_detected_labels, output_
     target_path = os.path.join(output_folder, f"Temp_Target_{target_label}.wav")
     separate_audio(model, audio_file, target_label, target_path, device)
     
+    # TRƯỜNG HỢP 1: KHÔNG CÓ TẠP ÂM ĐỂ KHỬ TRÙM
     if not noise_list:
-        final_name = f"OPTION_{target_label.replace(' ', '_')}.wav"
+        base_name = f"OPTION_{target_label.replace(' ', '_')}"
         y, sr = librosa.load(target_path, sr=None)
-        sf.write(os.path.join(output_folder, final_name), y, sr)
+        
+        # Dùng hàm helper xuất file mp3 thay vì sf.write wav
+        final_name = export_mp3(y, sr, output_folder, base_name)
         return final_name
 
     noise_paths = []
@@ -166,21 +189,30 @@ def process_option(model, audio_file, target_label, all_detected_labels, output_
             separate_audio(model, audio_file, n_label, n_path, device)
         noise_paths.append(n_path)
 
+    # TRƯỜNG HỢP 2: CÓ TẠP ÂM -> CẦN QUA BỘ LỌC DSP
     if noise_paths:
         try:
             processor = AdaptiveSignalProcessor()
             y_clean, sr = processor.process(original_path=audio_file, target_path=target_path, noise_paths=noise_paths, target_label=target_label)
             rms = np.sqrt(np.mean(y_clean**2))
-            if rms < 0.005: y_clean, sr = librosa.load(target_path, sr=None)
-            final_name = f"OPTION_{target_label.replace(' ', '_')}.wav"
-            sf.write(os.path.join(output_folder, final_name), y_clean, sr)
+            
+            # Khôi phục nếu tín hiệu quá nhỏ (lọc quá đà)
+            if rms < 0.005: 
+                y_clean, sr = librosa.load(target_path, sr=None)
+                
+            base_name = f"OPTION_{target_label.replace(' ', '_')}"
+            final_name = export_mp3(y_clean, sr, output_folder, base_name)
+            
             if os.path.exists(target_path): os.remove(target_path)
             return final_name
+            
         except Exception as e:
-            final_name = f"OPTION_{target_label.replace(' ', '_')}_Raw.wav"
+            # Fallback nếu DSP lỗi
+            base_name = f"OPTION_{target_label.replace(' ', '_')}_Raw"
             y, sr = librosa.load(target_path, sr=None)
-            sf.write(os.path.join(output_folder, final_name), y, sr)
+            final_name = export_mp3(y, sr, output_folder, base_name)
             return final_name
+            
     return None
 
 def run_audiosep_task(task_id: str, audio_file: str, result_dir: str):
@@ -215,7 +247,7 @@ def run_audiosep_task(task_id: str, audio_file: str, result_dir: str):
             if fname:
                 generated_files.append({"label": target_label, "confidence": score, "file": fname})
                 
-        # Dọn dẹp Temp files
+        # Dọn dẹp Temp files (các file WAV nháp của noise)
         for f in os.listdir(task_output_dir):
             if f.startswith("Temp_"):
                 os.remove(os.path.join(task_output_dir, f))
@@ -225,10 +257,10 @@ def run_audiosep_task(task_id: str, audio_file: str, result_dir: str):
             json.dump({
                 "status": "completed", 
                 "mode": "environment",
-                "tracks": generated_files # Gửi kèm danh sách nhãn để Frontend hiển thị
+                "tracks": generated_files # Mảng này giờ đang chứa các file .mp3
             }, f)
             
-        print(f"[Task {task_id}] Hoàn tất xử lý Smart Environment!")
+        print(f"[Task {task_id}] Hoàn tất xử lý Smart Environment! Tất cả file đã nén sang MP3.")
 
     except Exception as e:
         print(f"[Task {task_id}] Lỗi Environment Mode: {e}")

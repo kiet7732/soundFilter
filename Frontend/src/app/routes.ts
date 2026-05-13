@@ -1,11 +1,11 @@
 import { createBrowserRouter } from "react-router";
-import { RootLayout } from "./components/RootLayout";
-import { UploadDashboard } from "./screens/UploadDashboard";
-import { ProcessingScreen } from "./screens/ProcessingScreen";
-import { MusicWorkspace } from "./screens/MusicWorkspace";
-import { EnvironmentWorkspace } from "./screens/EnvironmentWorkspace";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { NotFound } from "./components/NotFound";
+import { RootLayout } from "../app/components/RootLayout";
+import { UploadDashboard } from "../app/screens/UploadDashboard";
+import { ProcessingScreen } from "../app/screens/ProcessingScreen";
+import { MusicWorkspace } from "../app/screens/MusicWorkspace";
+import { EnvironmentWorkspace } from "../app/screens/EnvironmentWorkspace";
+import { SettingsScreen } from "../app/screens/SettingsScreen";
+import { NotFound } from "../app/components/NotFound";
 
 export const router = createBrowserRouter([
   {
